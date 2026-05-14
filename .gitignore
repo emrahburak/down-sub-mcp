@@ -4,3 +4,5 @@ dist
 .env.local
 .tmp
 *.md.backup
+.opencode/
+*.spec.md
