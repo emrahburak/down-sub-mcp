@@ -4,6 +4,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { z } from "zod";
 import { createServer, IncomingMessage, ServerResponse } from "http";
+import { URL } from "url";
 import { getTranscript } from "./tools/get-transcript.js";
 
 // ─── API Key Auth ───────────────────────────────────────────────
@@ -14,6 +15,18 @@ if (!API_KEY) {
 }
 
 function validateApiKey(req: IncomingMessage): boolean {
+  // 1. Query parameter (priority)
+  try {
+    const url = new URL(req.url ?? "/", `http://${req.headers.host || "localhost"}`);
+    const queryKey = url.searchParams.get("apiKey");
+    if (queryKey && queryKey === API_KEY) {
+      return true;
+    }
+  } catch {
+    // Ignore URL parse errors
+  }
+
+  // 2. Authorization header
   const authHeader = req.headers.authorization ?? "";
   return authHeader === `Bearer ${API_KEY}`;
 }
@@ -64,6 +77,10 @@ server.tool(
 const PORT = parseInt(process.env.PORT ?? "3000", 10);
 
 const httpServer = createServer(async (req, res) => {
+  // Parse URL for routing and query params
+  const url = new URL(req.url ?? "/", `http://${req.headers.host || "localhost"}`);
+  const path = url.pathname;
+
   // CORS preflight
   if (req.method === "OPTIONS") {
     res.writeHead(204, {
@@ -83,14 +100,14 @@ const httpServer = createServer(async (req, res) => {
   }
 
   // Health check
-  if (req.method === "GET" && req.url === "/health") {
+  if (req.method === "GET" && path === "/health") {
     res.writeHead(200, { "Content-Type": "application/json" });
     res.end(JSON.stringify({ status: "ok", service: "down-sub-mcp" }));
     return;
   }
 
   // MCP endpoint
-  if (req.method === "POST" && req.url === "/mcp") {
+  if (req.method === "POST" && path === "/mcp") {
     const transport = new StreamableHTTPServerTransport({
       sessionIdGenerator: undefined, // Stateless mode
     });

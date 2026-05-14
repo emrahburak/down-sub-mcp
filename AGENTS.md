@@ -51,12 +51,12 @@ Server starts on `http://localhost:3000`.
 ```
 Client (OpenCode/Claude)
   │
-  ├─ POST /mcp (Authorization: Bearer <API_KEY>)
+  ├─ POST /mcp?apiKey=<key>  (or Authorization: Bearer <key>)
   │
   ▼
 HTTP Server (src/index.ts)
   │
-  ├─ API Key validation → 401 if invalid
+  ├─ API Key validation (query param → header) → 401 if invalid
   │
   ▼
 MCP Server (StreamableHTTPServerTransport)
@@ -136,6 +136,12 @@ explicit lang → tr → en → first available
 | `GET` | `/health` | Required | Health check |
 | `POST` | `/mcp` | Required | MCP Streamable HTTP endpoint |
 
+### Authentication
+
+API key can be provided via:
+1. **Query parameter** (priority): `?apiKey=<key>`
+2. **Header**: `Authorization: Bearer <key>`
+
 ## Key Patterns
 
 ### Language Fallback Strategy
@@ -147,12 +153,6 @@ The `get-transcript` tool attempts languages in order. If a requested language i
 - All errors return MCP `isError: true` responses (never crash the server)
 - Specific `youtube-transcript` error types are caught and converted to user-friendly messages
 - API key validation returns 401 before reaching MCP layer
-
-### Auth
-
-- Bearer token via `API_KEY` environment variable
-- Validated on every request before MCP processing
-- Health check also requires auth
 
 ## Development
 
@@ -176,21 +176,21 @@ npm run start         # Run compiled output
 ## Testing
 
 ```bash
-# Health check
-curl http://localhost:3000/health \
-  -H "Authorization: Bearer test-key"
+# Health check (query param)
+curl "http://localhost:3000/health?apiKey=test-key"
+
+# Health check (header)
+curl http://localhost:3000/health -H "Authorization: Bearer test-key"
 
 # MCP initialize
-curl -X POST http://localhost:3000/mcp \
+curl -X POST "http://localhost:3000/mcp?apiKey=test-key" \
   -H "Content-Type: application/json" \
-  -H "Authorization: Bearer test-key" \
   -H "Accept: application/json, text/event-stream" \
   -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"test","version":"1.0"}}}'
 
 # Tool call
-curl -X POST http://localhost:3000/mcp \
+curl -X POST "http://localhost:3000/mcp?apiKey=test-key" \
   -H "Content-Type: application/json" \
-  -H "Authorization: Bearer test-key" \
   -H "Accept: application/json, text/event-stream" \
   -d '{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"get-transcript","arguments":{"url":"https://www.youtube.com/watch?v=dQw4w9WgXcQ"}}}'
 ```
@@ -205,7 +205,7 @@ docker build -t down-sub-mcp .
 docker run -p 3000:3000 -e API_KEY=your-key down-sub-mcp
 
 # Health check
-curl http://localhost:3000/health
+curl http://localhost:3000/health?apiKey=your-key
 ```
 
 ## Coolify Deployment
@@ -230,10 +230,7 @@ Add to `opencode.jsonc`:
 "mcp": {
   "down-sub": {
     "type": "remote",
-    "url": "https://your-domain.com/mcp",
-    "headers": {
-      "Authorization": "Bearer {env:DOWN_SUB_API_KEY}"
-    },
+    "url": "https://downsub.aurensoft.me/mcp?apiKey={env:DOWN_SUB_API_KEY}",
     "enabled": true
   }
 }
@@ -252,6 +249,7 @@ DOWN_SUB_API_KEY=<same-api-key-from-coolify>
 - Store secrets in Coolify environment variables
 - HTTPS required (Coolify/Traefik handles automatically)
 - Single user = single API key, no OAuth needed
+- Query param auth is supported for client compatibility (e.g., OpenCode env var substitution)
 
 ## Code Standards
 
