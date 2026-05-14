@@ -97,17 +97,24 @@ const httpServer = createServer(async (req, res) => {
 
     await server.connect(transport);
 
-    let body = "";
-    req.on("data", (chunk: Buffer) => { body += chunk; });
-    req.on("end", async () => {
-      try {
-        const parsed = JSON.parse(body);
-        await transport.handleRequest(req, res, parsed);
-      } catch {
-        res.writeHead(400, { "Content-Type": "application/json" });
-        res.end(JSON.stringify({ error: "Invalid JSON" }));
+    try {
+      const body = await new Promise<string>((resolve, reject) => {
+        let data = "";
+        req.on("data", (chunk: Buffer) => { data += chunk; });
+        req.on("end", () => resolve(data));
+        req.on("error", reject);
+      });
+
+      const parsed = JSON.parse(body);
+      await transport.handleRequest(req, res, parsed);
+    } catch (error) {
+      if (!res.headersSent) {
+        res.writeHead(500, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ error: "Internal server error" }));
       }
-    });
+    } finally {
+      await transport.close();
+    }
     return;
   }
 
