@@ -14,7 +14,7 @@ YouTube URL → down-sub-mcp → Transcript text → AI assistant
 
 - Extract transcript from any YouTube video URL
 - Automatic language fallback (tr → en → default)
-- API Key authentication (Bearer token)
+- API Key authentication (Bearer token or query param)
 - Streamable HTTP transport (MCP standard)
 - Docker-ready with multi-stage Alpine build
 - Coolify deployment support
@@ -27,7 +27,7 @@ YouTube URL → down-sub-mcp → Transcript text → AI assistant
 | MCP SDK | @modelcontextprotocol/sdk |
 | Transport | Streamable HTTP |
 | Transcript | youtube-transcript (npm) |
-| Auth | API Key (Bearer token) |
+| Auth | API Key (Bearer token or query param) |
 | Container | Docker (multi-stage, Alpine) |
 
 ## Quick Start
@@ -58,41 +58,48 @@ docker run -p 3000:3000 -e API_KEY=test-key down-sub-mcp
 ### Health Check
 
 ```bash
-curl http://localhost:3000/health
+# Query param
+curl "http://localhost:3000/health?apiKey=test-key"
+
+# Bearer header
+curl http://localhost:3000/health -H "Authorization: Bearer test-key"
 ```
 
 ### MCP Tool Call
 
 ```bash
-curl -X POST http://localhost:3000/mcp \
+curl -X POST "http://localhost:3000/mcp?apiKey=test-key" \
   -H "Content-Type: application/json" \
-  -H "Authorization: Bearer test-key" \
   -H "Accept: application/json, text/event-stream" \
   -d '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"get-transcript","arguments":{"url":"https://www.youtube.com/watch?v=dQw4w9WgXcQ"}}}'
 ```
 
-### OpenCode Integration
+## OpenCode Integration
 
 Add to your `opencode.jsonc`:
 
 ```json
 "mcp": {
-  "down-sub": {
+  "downsub-mcp": {
     "type": "remote",
-    "url": "https://downsub.your-domain.com/mcp",
-    "headers": {
-      "Authorization": "Bearer {env:DOWN_SUB_API_KEY}"
-    },
+    "url": "https://downsub.your-domain.com/mcp?apiKey={env:DOWNSUB_API_KEY}",
     "enabled": true
   }
 }
 ```
 
-Set the key in `.env.local`:
+Set the key in your `.env` file:
 
 ```env
-DOWN_SUB_API_KEY=<same-api-key-from-coolify>
+DOWNSUB_API_KEY=<same-api-key-from-coolify>
 ```
+
+> **Note:** OpenCode resolves `{env:VAR_NAME}` from the shell environment, not from `.env` files. Use `direnv` to auto-load variables when entering your project directory:
+>
+> 1. Create `.envrc` with `dotenv`
+> 2. Run `direnv allow`
+>
+> Or source manually before launching: `source .env && opencode`
 
 ## Coolify Deployment
 
@@ -108,7 +115,7 @@ DOWN_SUB_API_KEY=<same-api-key-from-coolify>
 ## Security
 
 - Generate API key with `openssl rand -hex 32`
-- Never commit `.env.local` to git
+- Never commit `.env` to git
 - Store secrets in Coolify environment variables
 - HTTPS required (Coolify/Traefik handles automatically)
 
@@ -124,7 +131,8 @@ down-sub-mcp/
 ├── package.json
 ├── tsconfig.json
 ├── Dockerfile
-├── .env.example
+├── .env.example              # Environment template
+├── .envrc                    # direnv auto-load config
 ├── .dockerignore
 └── README.md
 ```
