@@ -6,6 +6,7 @@ import { z } from "zod";
 import { createServer, IncomingMessage, ServerResponse } from "http";
 import { URL } from "url";
 import { getTranscript } from "./tools/get-transcript.js";
+import { getTranscriptInfo } from "./tools/get-transcript-info.js";
 
 // ─── API Key Auth ───────────────────────────────────────────────
 const API_KEY = process.env.API_KEY;
@@ -34,7 +35,7 @@ function validateApiKey(req: IncomingMessage): boolean {
 // ─── MCP Server ─────────────────────────────────────────────────
 const server = new McpServer({
   name: "down-sub-mcp",
-  version: "1.0.0",
+  version: "2.0.0",
 });
 
 server.tool(
@@ -50,6 +51,43 @@ server.tool(
   async ({ url, lang }) => {
     try {
       const result = await getTranscript({ url, lang });
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify(result, null, 2),
+          },
+        ],
+      };
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : "Bilinmeyen hata";
+      return {
+        content: [
+          {
+            type: "text",
+            text: `Hata: ${message}`,
+          },
+        ],
+        isError: true,
+      };
+    }
+  }
+);
+
+// v2 tool — sadece metadata döner, transcript içeriği dahil değil
+server.tool(
+  "get-transcript-info",
+  "YouTube videosunun transcript metadata'sini dondurur (baslik, dil, kelime sayisi, sure). Transcript icerigi dahil DEGILDIR — icerik icin /download endpoint'ini kullanin.",
+  {
+    url: z.string().describe("YouTube video URL'si"),
+    lang: z
+      .enum(["tr", "en"])
+      .optional()
+      .describe("Transcript dili (tr veya en). Belirtilmezse otomatik secilir."),
+  },
+  async ({ url, lang }) => {
+    try {
+      const result = await getTranscriptInfo({ url, lang });
       return {
         content: [
           {
@@ -102,7 +140,56 @@ const httpServer = createServer(async (req, res) => {
   // Health check
   if (req.method === "GET" && path === "/health") {
     res.writeHead(200, { "Content-Type": "application/json" });
-    res.end(JSON.stringify({ status: "ok", service: "down-sub-mcp" }));
+    res.end(JSON.stringify({ status: "ok", service: "down-sub-mcp", version: "2.0.0" }));
+    return;
+  }
+
+  // ─── v2: Raw Download Endpoint ────────────────────────────────
+  // GET /download?url=...&lang=...&format=plain
+  // Transcript'i raw text olarak döner. curl -o ile dosyaya pipe edilebilir.
+  if (req.method === "GET" && path === "/download") {
+    try {
+      const videoUrl = url.searchParams.get("url");
+      const lang = url.searchParams.get("lang") || undefined;
+      const format = url.searchParams.get("format") || "plain";
+
+      if (!videoUrl) {
+        res.writeHead(400, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ error: "url parametresi zorunlu" }));
+        return;
+      }
+
+      // Transcript'i çek
+      const result = await getTranscript({
+        url: videoUrl,
+        lang: lang as "tr" | "en" | undefined,
+      });
+
+      // Başlık temizle (header için)
+      const safeTitle = result.title
+        .toLowerCase()
+        .replace(/[^a-z0-9ğüşıöçĞÜŞİÖÇ\s-]/g, "")
+        .replace(/\s+/g, "-")
+        .substring(0, 50);
+
+      // Plain text formatında döndür
+      if (format === "plain") {
+        res.writeHead(200, {
+          "Content-Type": "text/plain; charset=utf-8",
+          "Content-Disposition": `attachment; filename="${safeTitle}-${result.lang}.txt"`,
+        });
+        res.end(result.transcript);
+        return;
+      }
+
+      // Gelecek: srt, vtt formatları
+      res.writeHead(400, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ error: `Desteklenmeyen format: ${format}` }));
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : "Internal server error";
+      res.writeHead(500, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ error: message }));
+    }
     return;
   }
 
@@ -140,8 +227,9 @@ const httpServer = createServer(async (req, res) => {
 });
 
 httpServer.listen(PORT, "0.0.0.0", () => {
-  console.log(`down-sub-mcp server running on http://0.0.0.0:${PORT}`);
+  console.log(`down-sub-mcp v2 server running on http://0.0.0.0:${PORT}`);
   console.log(`MCP endpoint: POST /mcp`);
+  console.log(`Download endpoint: GET /download?url=...&lang=...`);
   console.log(`Health check: GET /health`);
 });
 

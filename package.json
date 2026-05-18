@@ -1,6 +1,6 @@
 {
   "name": "down-sub-mcp",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "description": "YouTube transcript MCP server for private use",
   "type": "module",
   "main": "dist/index.js",
