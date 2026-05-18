@@ -14,6 +14,8 @@ YouTube URL → down-sub-mcp → Transcript text → AI assistant
 
 - Extract transcript from any YouTube video URL
 - Automatic language fallback (tr → en → default)
+- **v2:** `get-transcript-info` tool — metadata only (~200 tokens, independent of video length)
+- **v2:** `GET /download` endpoint — raw transcript streaming to file
 - API Key authentication (Bearer token or query param)
 - Streamable HTTP transport (MCP standard)
 - Docker-ready with multi-stage Alpine build
@@ -67,12 +69,48 @@ curl http://localhost:3000/health -H "Authorization: Bearer test-key"
 
 ### MCP Tool Call
 
+#### `get-transcript` — Full transcript
+
 ```bash
 curl -X POST "http://localhost:3000/mcp?apiKey=test-key" \
   -H "Content-Type: application/json" \
   -H "Accept: application/json, text/event-stream" \
   -d '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"get-transcript","arguments":{"url":"https://www.youtube.com/watch?v=dQw4w9WgXcQ"}}}'
 ```
+
+#### `get-transcript-info` — Metadata only (v2)
+
+Returns title, language, word count, duration, and available languages — without the full transcript text.
+
+```bash
+curl -X POST "http://localhost:3000/mcp?apiKey=test-key" \
+  -H "Content-Type: application/json" \
+  -H "Accept: application/json, text/event-stream" \
+  -d '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"get-transcript-info","arguments":{"url":"https://www.youtube.com/watch?v=dQw4w9WgXcQ"}}}'
+```
+
+### Download Transcript to File (v2)
+
+Stream raw transcript text directly to a file:
+
+```bash
+# Download to specific filename
+curl -s -H "Authorization: Bearer test-key" \
+  "http://localhost:3000/download?url=https://www.youtube.com/watch?v=dQw4w9WgXcQ&lang=en" \
+  -o transcript.txt
+
+# Auto-filename from Content-Disposition header
+curl -s -OJ -H "Authorization: Bearer test-key" \
+  "http://localhost:3000/download?url=https://www.youtube.com/watch?v=dQw4w9WgXcQ&lang=en"
+```
+
+**Query parameters:**
+
+| Param | Required | Description |
+|-------|----------|-------------|
+| `url` | Yes | YouTube video URL or video ID |
+| `lang` | No | Language code (`tr`, `en`). Auto-selects if omitted |
+| `format` | No | `plain` (default). Future: `srt`, `vtt` |
 
 ## OpenCode Integration
 
@@ -126,7 +164,8 @@ down-sub-mcp/
 ├── src/
 │   ├── index.ts              # MCP server entry point
 │   ├── tools/
-│   │   └── get-transcript.ts # Transcript fetcher
+│   │   ├── get-transcript.ts # Full transcript fetcher
+│   │   └── get-transcript-info.ts  # Metadata-only tool (v2)
 │   └── types.ts              # TypeScript type definitions
 ├── package.json
 ├── tsconfig.json
