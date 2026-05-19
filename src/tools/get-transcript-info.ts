@@ -96,14 +96,43 @@ export async function getTranscriptInfo(
   const fullText = segments.map((s) => s.text).join(" ");
   const wordCount = fullText.split(/\s+/).filter(Boolean).length;
 
-  // Calculate duration from last segment (offset + duration, both in seconds)
+  // ─── v2.1 Düzeltme: Esnek birim tespiti ile süre hesaplama ──────
+  // youtube-transcript kütüphanesi offset ve duration birimlerini
+  // açıkça belirtmiyor. İlk segment offset'ine bakarak birim tahmini
+  // yapıyoruz: < 100 → saniye, < 100,000 → ms, > 100,000 → muhtemelen ms
+  // ama çok büyükse düzeltme uygulanır.
   const lastEntry = segments[segments.length - 1];
-  const totalSeconds = lastEntry
-    ? Math.ceil(lastEntry.offset + lastEntry.duration)
-    : 0;
-  const minutes = Math.floor(totalSeconds / 60);
-  const seconds = totalSeconds % 60;
-  const estimatedDuration = `${minutes}:${seconds.toString().padStart(2, "0")}`;
+  let estimatedDuration = "0:00";
+
+  if (lastEntry) {
+    const rawOffset = lastEntry.offset;
+    const rawDuration = lastEntry.duration;
+
+    // duration birimini tahmin et: tek segment genelde 1-15 saniye
+    const durationInMs = rawDuration > 1000
+      ? rawDuration
+      : rawDuration * 1000;
+
+    let totalMs = rawOffset + durationInMs;
+
+    // 24 saatten uzun süre imkansız → offset birimi farklı olabilir
+    if (totalMs > 86400000) {
+      // offset muhtemelen saniye cinsinden → ms'ye çevir
+      totalMs = rawOffset * 1000 + durationInMs;
+    }
+
+    // Hala çok büyükse offset zaten ms ama video süresi abartılı
+    if (totalMs > 86400000) {
+      console.warn(
+        `[get-transcript-info] Anormal süre: rawOffset=${rawOffset}, rawDuration=${rawDuration}, totalMs=${totalMs}`,
+      );
+    }
+
+    const totalSeconds = Math.ceil(totalMs / 1000);
+    const minutes = Math.floor(totalSeconds / 60);
+    const seconds = totalSeconds % 60;
+    estimatedDuration = `${minutes}:${seconds.toString().padStart(2, "0")}`;
+  }
 
   return {
     title: "YouTube Video",
