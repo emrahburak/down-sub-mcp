@@ -7,6 +7,7 @@ import { createServer, IncomingMessage, ServerResponse } from "http";
 import { URL } from "url";
 import { getTranscript } from "./tools/get-transcript.js";
 import { getTranscriptInfo } from "./tools/get-transcript-info.js";
+import { buildFilename } from "./utils/slugify.js";
 
 // ─── API Key Auth ───────────────────────────────────────────────
 const API_KEY = process.env.API_KEY;
@@ -165,18 +166,20 @@ const httpServer = createServer(async (req, res) => {
         lang: lang as "tr" | "en" | undefined,
       });
 
-      // Başlık temizle (header için)
-      const safeTitle = result.title
-        .toLowerCase()
-        .replace(/[^a-z0-9ğüşıöçĞÜŞİÖÇ\s-]/g, "")
-        .replace(/\s+/g, "-")
-        .substring(0, 50);
+      // v2.3: ASCII-safe dosya adı (Türkçe + Latin karakterler map'lenir)
+      const filename = buildFilename(
+        result.title,
+        result.lang,
+        result.videoId,
+        "txt",
+        50,
+      );
 
       // Plain text formatında döndür
       if (format === "plain") {
         res.writeHead(200, {
           "Content-Type": "text/plain; charset=utf-8",
-          "Content-Disposition": `attachment; filename="${safeTitle}-${result.lang}.txt"`,
+          "Content-Disposition": `attachment; filename="${filename}"`,
         });
         res.end(result.transcript);
         return;
