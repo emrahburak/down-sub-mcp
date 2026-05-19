@@ -21,6 +21,22 @@ function extractVideoId(input: string): string | null {
 }
 
 /**
+ * Fetches video title from YouTube oEmbed API.
+ * Free, no API key required. Returns empty string on failure.
+ */
+async function fetchVideoTitle(url: string): Promise<string> {
+  try {
+    const oembedUrl = `https://www.youtube.com/oembed?url=${encodeURIComponent(url)}&format=json`;
+    const resp = await fetch(oembedUrl);
+    if (!resp.ok) return "";
+    const data = await resp.json();
+    return data?.title || "";
+  } catch {
+    return "";
+  }
+}
+
+/**
  * Returns transcript metadata without including the full text content.
  * Useful for checking word count, duration, and available languages
  * before deciding to download the full transcript.
@@ -34,6 +50,9 @@ export async function getTranscriptInfo(
   if (!videoId) {
     throw new Error("Gecersiz YouTube URL'si");
   }
+
+  // Fetch video title from oEmbed (independent of transcript fetch)
+  const oembedTitle = await fetchVideoTitle(url);
 
   // Discover available languages by attempting a fetch with an invalid lang
   // The error message contains the actual available languages
@@ -135,7 +154,7 @@ export async function getTranscriptInfo(
   }
 
   return {
-    title: "YouTube Video",
+    title: oembedTitle || "Bilinmeyen Video",
     videoId,
     lang: selectedLang,
     availableLangs,

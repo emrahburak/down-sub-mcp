@@ -21,6 +21,22 @@ function extractVideoId(input: string): string | null {
 }
 
 /**
+ * Fetches video title from YouTube oEmbed API.
+ * Free, no API key required. Returns empty string on failure.
+ */
+async function fetchVideoTitle(url: string): Promise<string> {
+  try {
+    const oembedUrl = `https://www.youtube.com/oembed?url=${encodeURIComponent(url)}&format=json`;
+    const resp = await fetch(oembedUrl);
+    if (!resp.ok) return "";
+    const data = await resp.json();
+    return data?.title || "";
+  } catch {
+    return "";
+  }
+}
+
+/**
  * Fetches transcript with language fallback strategy:
  * specified lang → tr → en → default (first available)
  */
@@ -70,6 +86,9 @@ export async function getTranscript(
     throw new Error("Gecersiz YouTube URL'si");
   }
 
+  // Fetch video title from oEmbed (independent of transcript fetch)
+  const oembedTitle = await fetchVideoTitle(url);
+
   const { segments, lang: detectedLang } = await fetchWithFallback(videoId, lang);
 
   if (segments.length === 0) {
@@ -80,7 +99,7 @@ export async function getTranscript(
   const text = segments.map((s) => s.text).join(" ");
 
   return {
-    title: "YouTube Video",
+    title: oembedTitle || "Bilinmeyen Video",
     transcript: text,
     lang: detectedLang,
     videoId,
