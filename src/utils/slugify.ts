@@ -1,16 +1,13 @@
 /**
- * Latin karakterleri ASCII eşdeğerlerine dönüştürür.
+ * Türkçe karakterleri ASCII eşdeğerlerine dönüştürür.
  * HTTP header'larında (Content-Disposition vb.) güvenli kullanım için.
  *
  * Node.js http modülü header değerlerinde non-ASCII karakter kabul etmez.
- * Bu fonksiyon Türkçe + yaygın Latin karakterleri (İspanyolca, Fransızca,
- * Almanca, Portekizce, İskandinav, Doğu Avrupa) ASCII'ye map'ler.
- *
- * Kapsam: ~%95 Latin alfabesi (İngilizce %80 + Türkçe %10 + İspanyolca %5 + diğer %5)
- * Arapça/Çince/Rusça → silinir → videoId fallback
+ * /download endpoint'inde tr/en dışındaki diller en olarak çekildiğinden
+ * sadece Türkçe karakter map'i yeterlidir.
  */
 
-// Latin → ASCII karakter eşleştirmesi
+// Türkçe + yaygın Latin karakter → ASCII eşleştirmesi
 const LATIN_TO_ASCII: Record<string, string> = {
   // Türkçe
   'ı': 'i', 'İ': 'I',
@@ -19,62 +16,36 @@ const LATIN_TO_ASCII: Record<string, string> = {
   'ş': 's', 'Ş': 'S',
   'ö': 'o', 'Ö': 'O',
   'ç': 'c', 'Ç': 'C',
-  // İspanyolca
+  // İspanyolca / Fransızca / Almanca / Portekizce
   'ñ': 'n', 'Ñ': 'N',
   'á': 'a', 'Á': 'A',
-  'é': 'e', 'É': 'E',
-  'í': 'i', 'Í': 'I',
-  'ó': 'o', 'Ó': 'O',
-  'ú': 'u', 'Ú': 'U',
-  // Fransızca / Almanca / Portekizce / İskandinav
   'à': 'a', 'À': 'A',
   'â': 'a', 'Â': 'A',
   'ä': 'a', 'Ä': 'A',
-  'å': 'a', 'Å': 'A',
-  'æ': 'ae', 'Æ': 'AE',
+  'ã': 'a', 'Ã': 'A',
+  'é': 'e', 'É': 'E',
   'è': 'e', 'È': 'E',
   'ê': 'e', 'Ê': 'E',
   'ë': 'e', 'Ë': 'E',
-  'ì': 'i', 'Ì': 'I',
+  'í': 'i', 'Í': 'I',
   'î': 'i', 'Î': 'I',
   'ï': 'i', 'Ï': 'I',
-  'ò': 'o', 'Ò': 'O',
+  'ó': 'o', 'Ó': 'O',
   'ô': 'o', 'Ô': 'O',
   'õ': 'o', 'Õ': 'O',
-  'ã': 'a', 'Ã': 'A',
+  'ú': 'u', 'Ú': 'U',
   'ù': 'u', 'Ù': 'U',
   'û': 'u', 'Û': 'U',
-  'ÿ': 'y', 'Ÿ': 'Y',
-  'ý': 'y', 'Ý': 'Y',
-  // Doğu Avrupa (Lehçe, Çekçe, Hırvatça, Romence vb.)
-  'š': 's', 'Š': 'S',
-  'ž': 'z', 'Ž': 'Z',
-  'č': 'c', 'Č': 'C',
-  'ř': 'r', 'Ř': 'R',
-  'đ': 'd', 'Đ': 'D',
-  'ł': 'l', 'Ł': 'L',
-  'ą': 'a', 'Ą': 'A',
-  'ę': 'e', 'Ę': 'E',
-  'ń': 'n', 'Ń': 'N',
-  'ś': 's', 'Ś': 'S',
-  'ź': 'z', 'Ź': 'Z',
-  'ż': 'z', 'Ż': 'Z',
-  'ő': 'o', 'Ő': 'O',
-  'ű': 'u', 'Ű': 'U',
-  'ă': 'a', 'Ă': 'A',
-  // Özel karakterler
   'ß': 'ss',
-  'þ': 'th', 'Þ': 'TH',
-  'ð': 'd', 'Ð': 'D',
 };
 
 /**
  * Bir string'i HTTP header-safe ASCII slug'a dönüştürür.
  *
  * Adımlar:
- * 1. Latin karakterleri ASCII'ye map'le
+ * 1. Türkçe karakterleri ASCII'ye map'le
  * 2. Küçük harfe çevir
- * 3. Alfanümerik olmayan karakterleri temizle (sadece a-z0-9 ve boşluk/tire kalır)
+ * 3. Alfanümerik olmayan karakterleri temizle
  * 4. Boşlukları tire'ye çevir
  * 5. Ardışık tireleri tekilleştir
  * 6. Baş/son tireleri temizle
@@ -83,7 +54,7 @@ const LATIN_TO_ASCII: Record<string, string> = {
 export function slugify(input: string, maxLength: number = 50): string {
   if (!input) return '';
 
-  // 1. Latin → ASCII
+  // 1. Türkçe → ASCII
   let slug = input
     .split('')
     .map((char) => LATIN_TO_ASCII[char] ?? char)
@@ -92,7 +63,7 @@ export function slugify(input: string, maxLength: number = 50): string {
   // 2. Küçük harf
   slug = slug.toLowerCase();
 
-  // 3. Alfanümerik olmayanları temizle (sadece a-z0-9 ve boşluk/tire kalacak)
+  // 3. Alfanümerik olmayanları temizle
   slug = slug.replace(/[^a-z0-9\s-]/g, '');
 
   // 4. Boşlukları tire'ye çevir
@@ -107,7 +78,6 @@ export function slugify(input: string, maxLength: number = 50): string {
   // 7. Maksimum uzunluk (kelime sınırında kes)
   if (slug.length > maxLength) {
     slug = slug.substring(0, maxLength);
-    // Son tirede kes (yarım kelime kalmasın)
     slug = slug.replace(/-[^-]*$/, '');
   }
 
@@ -126,6 +96,6 @@ export function buildFilename(
   maxLength: number = 50,
 ): string {
   const slug = slugify(title, maxLength);
-  const base = slug || videoId; // Fallback: videoId
+  const base = slug || videoId;
   return `${base}-${lang}.${ext}`;
 }

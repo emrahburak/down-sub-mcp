@@ -151,8 +151,11 @@ const httpServer = createServer(async (req, res) => {
   if (req.method === "GET" && path === "/download") {
     try {
       const videoUrl = url.searchParams.get("url");
-      const lang = url.searchParams.get("lang") || undefined;
+      const rawLang = url.searchParams.get("lang");
       const format = url.searchParams.get("format") || "plain";
+
+      // Dil seçimi: tr veya en değilse → en kullan
+      const lang: "tr" | "en" = (rawLang === "tr" || rawLang === "en") ? rawLang : "en";
 
       if (!videoUrl) {
         res.writeHead(400, { "Content-Type": "application/json" });
@@ -163,7 +166,7 @@ const httpServer = createServer(async (req, res) => {
       // Transcript'i çek
       const result = await getTranscript({
         url: videoUrl,
-        lang: lang as "tr" | "en" | undefined,
+        lang,
       });
 
       // v2.3: ASCII-safe dosya adı (Türkçe + Latin karakterler map'lenir)
