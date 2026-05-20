@@ -1,4 +1,4 @@
-import { fetchTranscript, YoutubeTranscriptNotAvailableLanguageError } from "youtube-transcript";
+import { fetchTranscript } from "youtube-transcript";
 import type { TranscriptInfoRequest, TranscriptInfoResponse } from "../types.js";
 
 /**
@@ -38,8 +38,9 @@ async function fetchVideoTitle(url: string): Promise<string> {
 
 /**
  * Returns transcript metadata without including the full text content.
- * Useful for checking word count, duration, and available languages
- * before deciding to download the full transcript.
+ *
+ * v2.4: Try-fetch strategy — instead of asking "does a transcript exist?"
+ * (unreliable for auto-generated), just try to fetch it.
  */
 export async function getTranscriptInfo(
   input: TranscriptInfoRequest,
@@ -54,24 +55,44 @@ export async function getTranscriptInfo(
   // Fetch video title from oEmbed (independent of transcript fetch)
   const oembedTitle = await fetchVideoTitle(url);
 
-  // Discover available languages by attempting a fetch with an invalid lang
-  // The error message contains the actual available languages
-  let availableLangs: string[] = [];
-  try {
-    await fetchTranscript(videoId, { lang: "__invalid__" });
-  } catch (error) {
-    if (error instanceof YoutubeTranscriptNotAvailableLanguageError) {
-      // Error message format: "No transcripts are available in __invalid__ this video (xxx). Available languages: en, tr, de"
-      const match = error.message.match(/Available languages:\s*(.+)/);
-      if (match) {
-        availableLangs = match[1].split(",").map((s: string) => s.trim());
+  // ─── v2.4 FIX: Try-fetch strategy ─────────────────────────────
+  // Determine which language(s) to try
+  const langsToTry: string[] = lang ? [lang] : ["tr", "en"];
+
+  let selectedLang = "";
+  let segments: Array<{ text: string; offset: number; duration: number }> = [];
+
+  // Try each language in priority order
+  for (const tryLang of langsToTry) {
+    try {
+      const result = await fetchTranscript(videoId, { lang: tryLang });
+      if (result && result.length > 0) {
+        segments = result;
+        selectedLang = tryLang;
+        break;
       }
+    } catch {
+      // Continue to next language
     }
   }
 
-  if (availableLangs.length === 0) {
+  // If no explicit lang worked and no lang was specified, try auto-detect
+  if (segments.length === 0 && !lang) {
+    try {
+      const result = await fetchTranscript(videoId);
+      if (result && result.length > 0) {
+        segments = result;
+        selectedLang = result[0]?.lang ?? "auto";
+      }
+    } catch {
+      // Still nothing
+    }
+  }
+
+  // No transcript found
+  if (segments.length === 0) {
     return {
-      title: "Bilinmeyen Video",
+      title: oembedTitle || "Bilinmeyen Video",
       videoId,
       lang: "",
       availableLangs: [],
@@ -81,45 +102,11 @@ export async function getTranscriptInfo(
     };
   }
 
-  // Language selection: explicit → tr → en → first available
-  let selectedLang: string;
-  if (lang) {
-    if (!availableLangs.includes(lang)) {
-      throw new Error(
-        `Dil "${lang}" bu video icin mevcut degil. Mevcut diller: ${availableLangs.join(", ")}`,
-      );
-    }
-    selectedLang = lang;
-  } else {
-    if (availableLangs.includes("tr")) selectedLang = "tr";
-    else if (availableLangs.includes("en")) selectedLang = "en";
-    else selectedLang = availableLangs[0];
-  }
-
-  // Fetch transcript to calculate metadata
-  const segments = await fetchTranscript(videoId, { lang: selectedLang });
-
-  if (segments.length === 0) {
-    return {
-      title: "Bilinmeyen Video",
-      videoId,
-      lang: selectedLang,
-      availableLangs,
-      wordCount: 0,
-      estimatedDuration: "0:00",
-      hasTranscript: false,
-    };
-  }
-
-  // Calculate word count
+  // ─── Transcript found — compute metadata ──────────────────────
   const fullText = segments.map((s) => s.text).join(" ");
   const wordCount = fullText.split(/\s+/).filter(Boolean).length;
 
-  // ─── v2.1 Düzeltme: Esnek birim tespiti ile süre hesaplama ──────
-  // youtube-transcript kütüphanesi offset ve duration birimlerini
-  // açıkça belirtmiyor. İlk segment offset'ine bakarak birim tahmini
-  // yapıyoruz: < 100 → saniye, < 100,000 → ms, > 100,000 → muhtemelen ms
-  // ama çok büyükse düzeltme uygulanır.
+  // Duration calculation (v2.1 fix — flexible unit detection)
   const lastEntry = segments[segments.length - 1];
   let estimatedDuration = "0:00";
 
@@ -127,7 +114,6 @@ export async function getTranscriptInfo(
     const rawOffset = lastEntry.offset;
     const rawDuration = lastEntry.duration;
 
-    // duration birimini tahmin et: tek segment genelde 1-15 saniye
     const durationInMs = rawDuration > 1000
       ? rawDuration
       : rawDuration * 1000;
@@ -136,7 +122,6 @@ export async function getTranscriptInfo(
 
     // 24 saatten uzun süre imkansız → offset birimi farklı olabilir
     if (totalMs > 86400000) {
-      // offset muhtemelen saniye cinsinden → ms'ye çevir
       totalMs = rawOffset * 1000 + durationInMs;
     }
 
@@ -157,7 +142,7 @@ export async function getTranscriptInfo(
     title: oembedTitle || "Bilinmeyen Video",
     videoId,
     lang: selectedLang,
-    availableLangs,
+    availableLangs: [selectedLang],
     wordCount,
     estimatedDuration,
     hasTranscript: true,
