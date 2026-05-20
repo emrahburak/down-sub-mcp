@@ -6,3 +6,5 @@ dist
 *.md.backup
 .opencode/
 *.spec.md
+downsub-spec-*.md
+down-sub-mcp-spec.md
