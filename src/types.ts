@@ -37,3 +37,19 @@ export interface DownloadQueryParams {
   lang?: string;
   format?: "plain" | "srt" | "vtt";
 }
+
+// ─── v2.5: Download transcript tool ─────────────────────────────
+
+export interface DownloadTranscriptRequest {
+  url: string;
+  lang?: "tr" | "en";
+  output_dir?: string;
+}
+
+export interface DownloadTranscriptResponse {
+  filename: string;
+  path: string;
+  wordCount: number;
+  lang: string;
+  status: "success";
+}

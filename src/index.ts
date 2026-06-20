@@ -7,6 +7,7 @@ import { createServer, IncomingMessage, ServerResponse } from "http";
 import { URL } from "url";
 import { getTranscript } from "./tools/get-transcript.js";
 import { getTranscriptInfo } from "./tools/get-transcript-info.js";
+import { downloadTranscript } from "./tools/download-transcript.js";
 import { buildFilename } from "./utils/slugify.js";
 
 // ─── API Key Auth ───────────────────────────────────────────────
@@ -89,6 +90,47 @@ server.tool(
   async ({ url, lang }) => {
     try {
       const result = await getTranscriptInfo({ url, lang });
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify(result, null, 2),
+          },
+        ],
+      };
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : "Bilinmeyen hata";
+      return {
+        content: [
+          {
+            type: "text",
+            text: `Hata: ${message}`,
+          },
+        ],
+        isError: true,
+      };
+    }
+  }
+);
+
+// v2.5 tool — transcript'i direkt dosyaya yazar, sadece metadata döner
+server.tool(
+  "download-transcript",
+  "YouTube transcript'ini indirir ve direkt dosyaya kaydeder. Transcript icerigi MCP yanitina dahil DEGILDIR — sadece dosya yolu ve metadata doner.",
+  {
+    url: z.string().describe("YouTube video URL'si"),
+    lang: z
+      .enum(["tr", "en"])
+      .optional()
+      .describe("Transcript dili (tr veya en). Belirtilmezse otomatik secilir."),
+    output_dir: z
+      .string()
+      .optional()
+      .describe("Cikti dizini (varsayilan: references/)"),
+  },
+  async ({ url, lang, output_dir }) => {
+    try {
+      const result = await downloadTranscript({ url, lang, output_dir });
       return {
         content: [
           {

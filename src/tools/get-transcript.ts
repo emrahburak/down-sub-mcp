@@ -4,7 +4,7 @@ import type { TranscriptRequest, TranscriptResponse } from "../types.js";
 /**
  * Extracts YouTube video ID from URL or returns as-is if already an ID.
  */
-function extractVideoId(input: string): string | null {
+export function extractVideoId(input: string): string | null {
   const patterns = [
     /(?:youtube\.com\/watch\?v=)([a-zA-Z0-9_-]{11})/,
     /(?:youtu\.be\/)([a-zA-Z0-9_-]{11})/,
@@ -24,7 +24,7 @@ function extractVideoId(input: string): string | null {
  * Fetches video title from YouTube oEmbed API.
  * Free, no API key required. Returns empty string on failure.
  */
-async function fetchVideoTitle(url: string): Promise<string> {
+export async function fetchVideoTitle(url: string): Promise<string> {
   try {
     const oembedUrl = `https://www.youtube.com/oembed?url=${encodeURIComponent(url)}&format=json`;
     const resp = await fetch(oembedUrl);
@@ -40,7 +40,7 @@ async function fetchVideoTitle(url: string): Promise<string> {
  * Fetches transcript with language fallback strategy:
  * specified lang → tr → en → default (first available)
  */
-async function fetchWithFallback(
+export async function fetchWithFallback(
   videoId: string,
   lang?: string,
 ): Promise<{ segments: Array<{ text: string }>; lang: string }> {

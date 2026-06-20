@@ -1,261 +1,68 @@
 # down-sub-mcp — Agent Guide
 
-## Project Overview
-
-A lightweight MCP Server that extracts transcripts from YouTube videos. Built with Node.js + TypeScript, deployed via Docker on Coolify. Single-user service with API key authentication.
-
-## Prerequisites
-
-- Node.js 20+
-- npm 10+
-- Docker (optional, for containerized deployment)
-
-## Quick Start
+## Commands
 
 ```bash
-# 1. Clone and install
-git clone https://github.com/emrahburak/down-sub-mcp.git
-cd down-sub-mcp
-npm install
-
-# 2. Set environment variable
-export API_KEY=test-key
-
-# 3. Run in development mode (watch)
-npm run dev
-
-# Or build and run production
-npm run build
-npm run start
+npm run dev           # Watch mode (tsx) — server auto-reloads
+npm run build         # Compile TypeScript to dist/
+npm run start         # Run compiled output (node dist/index.js)
 ```
 
-Server starts on `http://localhost:3000`.
-
-## Tech Stack
-
-| Layer | Technology |
-|-------|------------|
-| Runtime | Node.js 20+ (ESM) |
-| Language | TypeScript 5+ (strict mode) |
-| MCP SDK | `@modelcontextprotocol/sdk` |
-| Transport | Streamable HTTP |
-| Transcript | `youtube-transcript` (npm) |
-| Validation | `zod` |
-| Container | Docker multi-stage (Alpine) |
-| Hosting | Coolify (Git push auto-deploy) |
+**No test framework configured.** Do not attempt to run tests.
 
 ## Architecture
 
-### Request Flow
+**Two MCP tools:**
+- `get-transcript` — Full transcript text with language fallback
+- `get-transcript-info` — Metadata only (title, lang, word count, duration) — ~200 tokens regardless of video length
+
+**Three HTTP endpoints:**
+- `GET /health` — Health check
+- `POST /mcp` — MCP Streamable HTTP endpoint
+- `GET /download?url=...&lang=...&format=plain` — Raw transcript as text file
+
+**Language fallback:** explicit lang → tr → en → first available
+
+**Auth:** API key via query param `?apiKey=<key>` (priority) or `Authorization: Bearer <key>` header
+
+## Project Structure
 
 ```
-Client (OpenCode/Claude)
-  │
-  ├─ POST /mcp?apiKey=<key>  (or Authorization: Bearer <key>)
-  │
-  ▼
-HTTP Server (src/index.ts)
-  │
-  ├─ API Key validation (query param → header) → 401 if invalid
-  │
-  ▼
-MCP Server (StreamableHTTPServerTransport)
-  │
-  ├─ tools/call → get-transcript
-  │
-  ▼
-Transcript Fetcher (src/tools/get-transcript.ts)
-  │
-  ├─ Extract video ID from URL
-  ├─ Fetch transcript with language fallback
-  │
-  ▼
-Response → MCP JSON → Client
+src/
+├── index.ts                    # HTTP server + MCP tool registration
+├── tools/
+│   ├── get-transcript.ts       # Full transcript fetcher
+│   └── get-transcript-info.ts  # Metadata-only tool (v2)
+├── utils/
+│   └── slugify.ts              # ASCII-safe filename generation
+└── types.ts                    # TypeScript interfaces
 ```
-
-### Project Structure
-
-```
-down-sub-mcp/
-├── src/
-│   ├── index.ts              # MCP server entry (HTTP + auth + tool registration)
-│   ├── tools/
-│   │   └── get-transcript.ts # Core transcript fetcher with language fallback
-│   └── types.ts              # TypeScript interfaces
-├── package.json
-├── tsconfig.json
-├── Dockerfile
-├── .env.example
-├── .dockerignore
-├── AGENTS.md
-└── README.md
-```
-
-## API Reference
-
-### Tool: `get-transcript`
-
-Extracts transcript text from a YouTube video.
-
-**Parameters:**
-
-| Parameter | Type | Required | Description |
-|-----------|------|----------|-------------|
-| `url` | string | Yes | YouTube video URL or video ID (11 chars) |
-| `lang` | `"tr"` \| `"en"` | No | Preferred transcript language |
-
-**Language Fallback:**
-
-```
-explicit lang → tr → en → first available
-```
-
-**Response Format:**
-
-```json
-{
-  "title": "YouTube Video",
-  "transcript": "Full transcript text joined from all segments...",
-  "lang": "tr",
-  "videoId": "dQw4w9WgXcQ"
-}
-```
-
-**Error Responses:**
-
-| Error | Description |
-|-------|-------------|
-| `Gecersiz YouTube URL'si` | URL format not recognized |
-| `Bu video icin transcript mevcut degil` | No transcript available |
-| Language error from youtube-transcript | Language not available for this video |
-
-### HTTP Endpoints
-
-| Method | Path | Auth | Description |
-|--------|------|------|-------------|
-| `GET` | `/health` | Required | Health check |
-| `POST` | `/mcp` | Required | MCP Streamable HTTP endpoint |
-
-### Authentication
-
-API key can be provided via:
-1. **Query parameter** (priority): `?apiKey=<key>`
-2. **Header**: `Authorization: Bearer <key>`
-
-## Key Patterns
-
-### Language Fallback Strategy
-
-The `get-transcript` tool attempts languages in order. If a requested language isn't available, it throws a clear error listing available languages.
-
-### Error Handling
-
-- All errors return MCP `isError: true` responses (never crash the server)
-- Specific `youtube-transcript` error types are caught and converted to user-friendly messages
-- API key validation returns 401 before reaching MCP layer
-
-## Development
-
-### Scripts
-
-```bash
-npm install           # Install dependencies
-npm run dev           # Watch mode (tsx)
-npm run build         # Compile to dist/
-npm run start         # Run compiled output
-```
-
-### Environment Variables
-
-| Variable | Required | Default | Description |
-|----------|----------|---------|-------------|
-| `API_KEY` | Yes | — | Bearer token for authentication |
-| `PORT` | No | `3000` | HTTP server port |
-| `NODE_ENV` | No | `development` | Node environment |
-
-## Testing
-
-```bash
-# Health check (query param)
-curl "http://localhost:3000/health?apiKey=test-key"
-
-# Health check (header)
-curl http://localhost:3000/health -H "Authorization: Bearer test-key"
-
-# MCP initialize
-curl -X POST "http://localhost:3000/mcp?apiKey=test-key" \
-  -H "Content-Type: application/json" \
-  -H "Accept: application/json, text/event-stream" \
-  -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"test","version":"1.0"}}}'
-
-# Tool call
-curl -X POST "http://localhost:3000/mcp?apiKey=test-key" \
-  -H "Content-Type: application/json" \
-  -H "Accept: application/json, text/event-stream" \
-  -d '{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"get-transcript","arguments":{"url":"https://www.youtube.com/watch?v=dQw4w9WgXcQ"}}}'
-```
-
-## Docker
-
-```bash
-# Build
-docker build -t down-sub-mcp .
-
-# Run
-docker run -p 3000:3000 -e API_KEY=your-key down-sub-mcp
-
-# Health check
-curl http://localhost:3000/health?apiKey=your-key
-```
-
-## Coolify Deployment
-
-1. Connect GitHub repository
-2. **Build Pack**: `Dockerfile`
-3. **Port**: `3000`
-4. **Environment Variables**:
-
-| Key | Value |
-|-----|-------|
-| `API_KEY` | `openssl rand -hex 32` output |
-| `NODE_ENV` | `production` |
-
-5. Deploy
-
-### OpenCode Integration
-
-Add to `opencode.jsonc`:
-
-```json
-"mcp": {
-  "down-sub": {
-    "type": "remote",
-    "url": "https://downsub.aurensoft.me/mcp?apiKey={env:DOWN_SUB_API_KEY}",
-    "enabled": true
-  }
-}
-```
-
-Set in `.env.local`:
-
-```env
-DOWN_SUB_API_KEY=<same-api-key-from-coolify>
-```
-
-## Security Notes
-
-- Generate API key with `openssl rand -hex 32`
-- Never commit `.env` or `.env.local` to git
-- Store secrets in Coolify environment variables
-- HTTPS required (Coolify/Traefik handles automatically)
-- Single user = single API key, no OAuth needed
-- Query param auth is supported for client compatibility (e.g., OpenCode env var substitution)
 
 ## Code Standards
 
+- **ESM modules only** — Use `.js` extensions in imports (e.g., `import { foo } from "./bar.js"`)
+- **TypeScript strict mode** — Enabled in tsconfig.json
+- **Error messages in Turkish** — Intentional (e.g., "Gecersiz YouTube URL'si")
 - Pure functions where possible
 - Explicit error handling (no silent failures)
-- Small, focused modules (< 50 lines per function)
-- TypeScript strict mode
-- ESM modules only (`.js` extensions in imports)
-- Naming: lowercase-with-dashes for files, camelCase for functions
+- All MCP errors return `isError: true` responses (never crash the server)
+
+## Environment
+
+Required: `API_KEY` environment variable (no default)
+
+Optional:
+- `PORT` (default: 3000)
+- `NODE_ENV` (default: development)
+
+**direnv setup:** `.envrc` exists — run `direnv allow` to auto-load `.env` when entering directory.
+
+## Key Patterns
+
+**Video ID extraction:** Supports youtube.com/watch, youtu.be, youtube.com/shorts, youtube.com/embed, or raw 11-char ID
+
+**Title fetching:** Uses YouTube oEmbed API (free, no API key required)
+
+**Duration calculation:** Handles inconsistent units from youtube-transcript library (seconds vs milliseconds) with fallback logic
+
+**Filename generation:** Turkish/Latin characters mapped to ASCII for HTTP header safety (Content-Disposition)
