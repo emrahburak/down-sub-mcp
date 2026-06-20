@@ -1,6 +1,6 @@
 # down-sub-mcp — Agent Guide
 
-**Version:** v3.0.0 — Zero-Storage Architecture
+**Version:** v3.1.0 — Zero-Storage Architecture
 
 ## Commands
 
@@ -17,8 +17,7 @@ npm run start         # Run compiled output (node dist/index.js)
 **Core Principle:** The MCP server is a **stateless content fetcher**. It fetches transcripts
 from YouTube and delivers them to the client. It **NEVER** stores transcript content on disk.
 
-**Two MCP tools:**
-- `get-transcript` — Full transcript text with language fallback
+**One MCP tool:**
 - `get-transcript-info` — Metadata only (title, lang, word count, duration) — ~200 tokens regardless of video length
 
 **Three HTTP endpoints:**
@@ -28,7 +27,7 @@ from YouTube and delivers them to the client. It **NEVER** stores transcript con
 
 **Language fallback:** explicit lang → tr → en → first available
 
-**Auth:** API key via query param `?apiKey=<key>` (priority) or `Authorization: Bearer <key>` header
+**Auth:** API key via query param `?apiKey=<key>` (priority) or `Authorization: Bearer *** header
 
 ## Project Structure
 
@@ -36,8 +35,8 @@ from YouTube and delivers them to the client. It **NEVER** stores transcript con
 src/
 ├── index.ts                    # HTTP server + MCP tool registration
 ├── tools/
-│   ├── get-transcript.ts       # Full transcript fetcher
-│   └── get-transcript-info.ts  # Metadata-only tool (v2)
+│   ├── get-transcript.ts       # Core transcript fetcher (used by /download endpoint)
+│   └── get-transcript-info.ts  # Metadata-only MCP tool
 ├── utils/
 │   └── slugify.ts              # ASCII-safe filename generation
 └── types.ts                    # TypeScript interfaces

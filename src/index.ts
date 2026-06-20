@@ -36,46 +36,10 @@ function validateApiKey(req: IncomingMessage): boolean {
 // ─── MCP Server ─────────────────────────────────────────────────
 const server = new McpServer({
   name: "down-sub-mcp",
-  version: "3.0.0",
+  version: "3.1.0",
 });
 
-server.tool(
-  "get-transcript",
-  "YouTube videosunun transcript'ini (altyazi/metin) indirir. Dil belirtilmezse otomatik secilir (once tr, sonra en).",
-  {
-    url: z.string().describe("YouTube video URL'si"),
-    lang: z
-      .enum(["tr", "en"])
-      .optional()
-      .describe("Transcript dili (tr veya en). Belirtilmezse otomatik secilir."),
-  },
-  async ({ url, lang }) => {
-    try {
-      const result = await getTranscript({ url, lang });
-      return {
-        content: [
-          {
-            type: "text",
-            text: JSON.stringify(result, null, 2),
-          },
-        ],
-      };
-    } catch (error: unknown) {
-      const message = error instanceof Error ? error.message : "Bilinmeyen hata";
-      return {
-        content: [
-          {
-            type: "text",
-            text: `Hata: ${message}`,
-          },
-        ],
-        isError: true,
-      };
-    }
-  }
-);
-
-// v2 tool — sadece metadata döner, transcript içeriği dahil değil
+// Tek MCP tool — sadece metadata döner, transcript içeriği dahil değil
 server.tool(
   "get-transcript-info",
   "YouTube videosunun transcript metadata'sini dondurur (baslik, dil, kelime sayisi, sure). Transcript icerigi dahil DEGILDIR — icerik icin /download endpoint'ini kullanin.",
