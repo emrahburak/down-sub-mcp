@@ -7,7 +7,6 @@ import { createServer, IncomingMessage, ServerResponse } from "http";
 import { URL } from "url";
 import { getTranscript } from "./tools/get-transcript.js";
 import { getTranscriptInfo } from "./tools/get-transcript-info.js";
-import { downloadTranscript } from "./tools/download-transcript.js";
 import { buildFilename } from "./utils/slugify.js";
 
 // ─── API Key Auth ───────────────────────────────────────────────
@@ -37,7 +36,7 @@ function validateApiKey(req: IncomingMessage): boolean {
 // ─── MCP Server ─────────────────────────────────────────────────
 const server = new McpServer({
   name: "down-sub-mcp",
-  version: "2.0.0",
+  version: "3.0.0",
 });
 
 server.tool(
@@ -113,47 +112,6 @@ server.tool(
   }
 );
 
-// v2.5 tool — transcript'i direkt dosyaya yazar, sadece metadata döner
-server.tool(
-  "download-transcript",
-  "YouTube transcript'ini indirir ve direkt dosyaya kaydeder. Transcript icerigi MCP yanitina dahil DEGILDIR — sadece dosya yolu ve metadata doner.",
-  {
-    url: z.string().describe("YouTube video URL'si"),
-    lang: z
-      .enum(["tr", "en"])
-      .optional()
-      .describe("Transcript dili (tr veya en). Belirtilmezse otomatik secilir."),
-    output_dir: z
-      .string()
-      .optional()
-      .describe("Cikti dizini (varsayilan: references/)"),
-  },
-  async ({ url, lang, output_dir }) => {
-    try {
-      const result = await downloadTranscript({ url, lang, output_dir });
-      return {
-        content: [
-          {
-            type: "text",
-            text: JSON.stringify(result, null, 2),
-          },
-        ],
-      };
-    } catch (error: unknown) {
-      const message = error instanceof Error ? error.message : "Bilinmeyen hata";
-      return {
-        content: [
-          {
-            type: "text",
-            text: `Hata: ${message}`,
-          },
-        ],
-        isError: true,
-      };
-    }
-  }
-);
-
 // ─── HTTP Server (Streamable HTTP) ──────────────────────────────
 const PORT = parseInt(process.env.PORT ?? "3000", 10);
 
@@ -183,7 +141,7 @@ const httpServer = createServer(async (req, res) => {
   // Health check
   if (req.method === "GET" && path === "/health") {
     res.writeHead(200, { "Content-Type": "application/json" });
-    res.end(JSON.stringify({ status: "ok", service: "down-sub-mcp", version: "2.0.0" }));
+    res.end(JSON.stringify({ status: "ok", service: "down-sub-mcp", version: "3.0.0" }));
     return;
   }
 
