@@ -1,36 +1,56 @@
-# down-sub-mcp
+# down-sub-mcp v3.1.0
 
-A lightweight **MCP Server** that extracts transcripts (subtitles/text) from YouTube videos.
-
-Designed to provide AI assistants (Claude, Cursor, OpenCode, etc.) with YouTube video content as text. Give it a URL, get the transcript — language selection is automatic.
-
-## How It Works
+**Zero-storage, zero-token YouTube transcript delivery.**  
+Metadata via MCP (~200 tokens). Content via HTTP stream (0 tokens).  
+Never writes transcript to server disk.
 
 ```
-YouTube URL → down-sub-mcp → Transcript text → AI assistant
+YouTube URL → down-sub-mcp ──→ get-transcript-info (MCP, metadata only, ~200 tokens)
+                         └──→ /download (HTTP, content stream, 0 tokens)
 ```
+
+## Architecture
+
+```
+┌─────────────────────────────────────────────┐
+│              down-sub-mcp (Remote)           │
+│                                              │
+│  MCP (1 tool)           HTTP                 │
+│  ┌──────────────────┐   ┌────────────────┐   │
+│  │ get-transcript-  │   │ GET /download   │   │
+│  │ info             │   │ → content       │   │
+│  │ → title, lang,   │   │   stream        │   │
+│  │   wordCount,     │   │ → zero disk     │   │
+│  │   videoId, dur.  │   │ → zero token    │   │
+│  └──────────────────┘   └────────────────┘   │
+│                                              │
+│       getTranscript() — shared logic         │
+│       YouTube API → in-memory → deliver      │
+│       NEVER writes to server disk            │
+└─────────────────────────────────────────────┘
+```
+
+## Why This Design?
+
+| Approach | Token Cost | Large Videos | Notes |
+|----------|-----------|-------------|-------|
+| MCP-only (full text) | ~50K | ❌ Context overflow | Most MCP servers do this |
+| MCP pagination | ~50K (chunked) | ✅ With cursor | Still puts content in context |
+| **MCP info + HTTP /download** | **~200** | **✅ Stream** | **Only this achieves zero token** |
+
+MCP has no mechanism to exclude tool results from LLM context. The only way to keep content out of the context window is to not return it as a tool result — so content flows exclusively through the HTTP `/download` endpoint.
 
 ## Features
 
-- Extract transcript from any YouTube video URL
-- Automatic language fallback (tr → en → default)
-- **v2:** `get-transcript-info` tool — metadata only (~200 tokens, independent of video length)
-- **v2:** `GET /download` endpoint — raw transcript streaming to file
-- API Key authentication (Bearer token or query param)
-- Streamable HTTP transport (MCP standard)
-- Docker-ready with multi-stage Alpine build
-- Coolify deployment support
-
-## Tech Stack
-
-| Layer | Technology |
-|-------|------------|
-| Language | Node.js + TypeScript |
-| MCP SDK | @modelcontextprotocol/sdk |
-| Transport | Streamable HTTP |
-| Transcript | youtube-transcript (npm) |
-| Auth | API Key (Bearer token or query param) |
-| Container | Docker (multi-stage, Alpine) |
+- **One MCP tool** — `get-transcript-info`: metadata only (title, language, word count, duration, available languages)
+- **HTTP `/download` endpoint** — raw transcript stream, zero tokens, write directly to file with `curl -o`
+- **Zero server storage** — transcript is fetched in-memory, delivered, then garbage-collected. Never touches disk.
+- **Zero token content delivery** — transcript text never enters LLM context
+- Automatic language selection (`tr` → `en` → auto)
+- API Key authentication (query param or Bearer header)
+- Streamable HTTP MCP transport
+- Docker-ready (multi-stage Alpine)
+- Coolify-compatible
 
 ## Quick Start
 
@@ -55,123 +75,167 @@ docker build -t down-sub-mcp .
 docker run -p 3000:3000 -e API_KEY=test-key down-sub-mcp
 ```
 
-## Usage
+## API Reference
 
-### Health Check
+### `GET /health`
 
 ```bash
-# Query param
-curl "http://localhost:3000/health?apiKey=test-key"
-
-# Bearer header
-curl http://localhost:3000/health -H "Authorization: Bearer test-key"
+curl "https://downsub.aurensoft.me/health?apiKey=YOUR_KEY"
+# {"status":"ok","service":"down-sub-mcp","version":"3.1.0"}
 ```
 
-### MCP Tool Call
+### MCP: `get-transcript-info` (only MCP tool)
 
-#### `get-transcript` — Full transcript
+Returns metadata only — title, language, word count, duration, available languages. Transcript content is **NOT included**.
 
 ```bash
-curl -X POST "http://localhost:3000/mcp?apiKey=test-key" \
+curl -X POST "https://downsub.aurensoft.me/mcp?apiKey=YOUR_KEY" \
   -H "Content-Type: application/json" \
   -H "Accept: application/json, text/event-stream" \
-  -d '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"get-transcript","arguments":{"url":"https://www.youtube.com/watch?v=dQw4w9WgXcQ"}}}'
+  -d '{
+    "jsonrpc":"2.0",
+    "id":1,
+    "method":"tools/call",
+    "params":{
+      "name":"get-transcript-info",
+      "arguments":{"url":"https://www.youtube.com/watch?v=dQw4w9WgXcQ","lang":"en"}
+    }
+  }'
 ```
 
-#### `get-transcript-info` — Metadata only (v2)
-
-Returns title, language, word count, duration, and available languages — without the full transcript text.
-
-```bash
-curl -X POST "http://localhost:3000/mcp?apiKey=test-key" \
-  -H "Content-Type: application/json" \
-  -H "Accept: application/json, text/event-stream" \
-  -d '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"get-transcript-info","arguments":{"url":"https://www.youtube.com/watch?v=dQw4w9WgXcQ"}}}'
+**Response (~200 tokens):**
+```json
+{
+  "title": "Rick Astley - Never Gonna Give You Up...",
+  "videoId": "dQw4w9WgXcQ",
+  "lang": "en",
+  "availableLangs": ["en"],
+  "wordCount": 487,
+  "estimatedDuration": "3:32",
+  "hasTranscript": true
+}
 ```
 
-### Download Transcript to File (v2)
+### `GET /download` — Primary Content Delivery
 
-Stream raw transcript text directly to a file:
+Stream raw transcript to a local file. Zero tokens — content goes directly to disk.
 
 ```bash
-# Download to specific filename
-curl -s -H "Authorization: Bearer test-key" \
-  "http://localhost:3000/download?url=https://www.youtube.com/watch?v=dQw4w9WgXcQ&lang=en" \
-  -o transcript.txt
+# Query param auth
+curl -s -o transcript.txt \
+  "https://downsub.aurensoft.me/download?url=https://www.youtube.com/watch?v=dQw4w9WgXcQ&lang=en&apiKey=YOUR_KEY"
 
-# Auto-filename from Content-Disposition header
-curl -s -OJ -H "Authorization: Bearer test-key" \
-  "http://localhost:3000/download?url=https://www.youtube.com/watch?v=dQw4w9WgXcQ&lang=en"
+# Bearer token auth
+curl -s -o transcript.txt \
+  -H "Authorization: Bearer YOUR_KEY" \
+  "https://downsub.aurensoft.me/download?url=https://www.youtube.com/watch?v=dQw4w9WgXcQ&lang=en"
 ```
 
 **Query parameters:**
 
 | Param | Required | Description |
 |-------|----------|-------------|
-| `url` | Yes | YouTube video URL or video ID |
-| `lang` | No | Language code (`tr`, `en`). Auto-selects if omitted |
-| `format` | No | `plain` (default). Future: `srt`, `vtt` |
+| `url` | **Yes** | YouTube URL or video ID (`dQw4w9WgXcQ`) |
+| `lang` | No | Language: `tr` or `en`. Auto-detects if omitted |
+| `format` | No | Output format: `plain` (default). Future: `srt`, `vtt` |
 
-## OpenCode Integration
+## Agent Workflow (downsub-mimic)
 
-Add to your `opencode.jsonc`:
+The recommended client pattern:
+
+```
+downsub <url>
+  │
+  ├─ 1. MCP: get-transcript-info → {title, lang, wordCount, videoId}
+  │      ~200 tokens
+  │
+  ├─ 2. Size check: wordCount > 50000 → abort
+  │
+  ├─ 3. Slug: title → ASCII-safe filename
+  │
+  ├─ 4. Terminal: curl -o vault/inbox/{slug}-{lang}.txt
+  │     "https://downsub.aurensoft.me/download?url=...&lang=..."
+  │     Zero tokens — content streams directly to local file
+  │
+  └─ 5. Report: BIRAKILAN: vault/inbox/{slug}-{lang}.txt
+       Content NEVER enters chat
+```
+
+## Integration
+
+### Hermes Agent
+
+```xml
+<!-- ~/.hermes/agents/downsub-mimic.xml -->
+<tool name="mcp_downsub_get_transcript_info">Metadata only</tool>
+<tool name="terminal">curl /download → local file</tool>
+```
+
+### OpenCode / Cursor / Claude Desktop
 
 ```json
-"mcp": {
-  "downsub-mcp": {
-    "type": "remote",
-    "url": "https://downsub.your-domain.com/mcp?apiKey={env:DOWNSUB_API_KEY}",
-    "enabled": true
+{
+  "mcpServers": {
+    "downsub-mcp": {
+      "type": "url",
+      "url": "https://downsub.aurensoft.me/mcp?apiKey=YOUR_KEY"
+    }
   }
 }
 ```
 
-Set the key in your `.env` file:
+> **Note:** This gives you only `get-transcript-info`. For content, use `curl` with the `/download` endpoint. This is intentional — content should never enter the LLM context window.
 
-```env
-DOWNSUB_API_KEY=<same-api-key-from-coolify>
-```
-
-> **Note:** OpenCode resolves `{env:VAR_NAME}` from the shell environment, not from `.env` files. Use `direnv` to auto-load variables when entering your project directory:
->
-> 1. Create `.envrc` with `dotenv`
-> 2. Run `direnv allow`
->
-> Or source manually before launching: `source .env && opencode`
-
-## Coolify Deployment
+## Deployment (Coolify)
 
 1. Push to GitHub
 2. Coolify → **New Resource** → **Application** → connect repo
-3. **Build Pack**: `Dockerfile`
-4. **Port**: `3000`
-5. **Environment Variables**:
+3. Build Pack: `Dockerfile`
+4. Port: `3000`
+5. Environment variables:
    - `API_KEY`: generate with `openssl rand -hex 32`
    - `NODE_ENV`: `production`
-6. **Deploy**
+6. Deploy
 
 ## Security
 
-- Generate API key with `openssl rand -hex 32`
-- Never commit `.env` to git
-- Store secrets in Coolify environment variables
-- HTTPS required (Coolify/Traefik handles automatically)
+- API key required for all endpoints
+- Generate keys: `openssl rand -hex 32`
+- Pass via query param (`?apiKey=...`) or `Authorization: Bearer` header
+- Never commit `.env` or `.envrc` to git
+- Store secrets in Coolify / environment variables
+- HTTPS enforced (Cloudflare / Coolify Traefik)
+- Zero server storage — no transcript data persisted
 
 ## Project Structure
 
 ```
 down-sub-mcp/
 ├── src/
-│   ├── index.ts              # MCP server entry point
+│   ├── index.ts                  # HTTP server + 1 MCP tool registration
 │   ├── tools/
-│   │   ├── get-transcript.ts # Full transcript fetcher
-│   │   └── get-transcript-info.ts  # Metadata-only tool (v2)
-│   └── types.ts              # TypeScript type definitions
+│   │   ├── get-transcript.ts     # Core fetcher (used by /download, NOT an MCP tool)
+│   │   └── get-transcript-info.ts # Metadata-only MCP tool
+│   ├── utils/
+│   │   └── slugify.ts            # ASCII-safe filename generation
+│   └── types.ts                  # TypeScript interfaces
+├── SPEC.md                       # Architecture spec (v3.1.0)
+├── AGENTS.md                     # AI agent instructions
 ├── package.json
 ├── tsconfig.json
 ├── Dockerfile
-├── .env.example              # Environment template
-├── .envrc                    # direnv auto-load config
 ├── .dockerignore
 └── README.md
 ```
+
+## Version History
+
+| Version | Date | Changes |
+|---------|------|---------|
+| v2.5 | 2026-06-19 | Initial release: `get-transcript` MCP tool |
+| v3.0.0 | 2026-06-20 | Zero-storage: added `/download`, `get-transcript-info` |
+| **v3.1.0** | **2026-06-20** | **Removed `get-transcript` MCP tool. Single MCP tool: `get-transcript-info`. Content exclusively via HTTP `/download`.** |
+
+## License
+
+MIT
