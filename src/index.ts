@@ -105,7 +105,7 @@ const httpServer = createServer(async (req, res) => {
   // Health check
   if (req.method === "GET" && path === "/health") {
     res.writeHead(200, { "Content-Type": "application/json" });
-    res.end(JSON.stringify({ status: "ok", service: "down-sub-mcp", version: "3.0.0" }));
+    res.end(JSON.stringify({ status: "ok", service: "down-sub-mcp", version: "3.1.0" }));
     return;
   }
 
