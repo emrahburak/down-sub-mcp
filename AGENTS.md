@@ -1,5 +1,7 @@
 # down-sub-mcp — Agent Guide
 
+**Version:** v3.0.0 — Zero-Storage Architecture
+
 ## Commands
 
 ```bash
@@ -12,6 +14,9 @@ npm run start         # Run compiled output (node dist/index.js)
 
 ## Architecture
 
+**Core Principle:** The MCP server is a **stateless content fetcher**. It fetches transcripts
+from YouTube and delivers them to the client. It **NEVER** stores transcript content on disk.
+
 **Two MCP tools:**
 - `get-transcript` — Full transcript text with language fallback
 - `get-transcript-info` — Metadata only (title, lang, word count, duration) — ~200 tokens regardless of video length
@@ -19,7 +24,7 @@ npm run start         # Run compiled output (node dist/index.js)
 **Three HTTP endpoints:**
 - `GET /health` — Health check
 - `POST /mcp` — MCP Streamable HTTP endpoint
-- `GET /download?url=...&lang=...&format=plain` — Raw transcript as text file
+- `GET /download?url=...&lang=...&format=plain` — **Primary delivery mechanism.** Raw transcript streamed to client via HTTP response. Zero server-side storage, zero LLM token cost for content.
 
 **Language fallback:** explicit lang → tr → en → first available
 
